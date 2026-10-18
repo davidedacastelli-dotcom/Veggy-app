@@ -1,8 +1,8 @@
-const CACHE = "veggiescan-v2";
+const CACHE = "veggiescan-v3";
 const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}));
   self.skipWaiting();
 });
 
@@ -13,8 +13,17 @@ self.addEventListener("activate", (e) => {
   self.clients.claim();
 });
 
+// Network first: always the latest version online, saved copy only when offline.
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
-  e.respondWith(caches.match(e.request).then((r) => r || fetch(e.request)));
+  if (e.request.method !== "GET" || url.origin !== location.origin) return;
+  e.respondWith(
+    fetch(e.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE).then((c) => c.put(e.request, copy)).catch(() => {});
+        return res;
+      })
+      .catch(() => caches.match(e.request).then((r) => r || caches.match("./index.html")))
+  );
 });
